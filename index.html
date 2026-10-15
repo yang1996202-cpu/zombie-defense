@@ -213,7 +213,7 @@ function buildWave(n){
     const r = Math.random();
     if(n>=3 && r<0.22) type='fast';
     else if(n>=4 && r<0.34) type='tank';
-    spawnQueue.push({ type, delay: 50 + i*(boss?34:22) });   // 开头留 1 秒喘息
+    spawnQueue.push({ type, delay: 70 + i*(boss?34:22) });   // 开头留 >1 秒喘息
   }
   if(boss) spawnQueue.push({ type:'boss', delay: count*22 + 40 });
 }
@@ -320,20 +320,17 @@ function update(){
     }
   });
 
-  // 波次推进
-  if(--waveTimer<=0 && spawnQueue.length===0){ wave++; buildWave(wave); if(wave%5===0) shake=12; }
+  // 波次推进（唯一入口）：场清 + 计时到 → 开下一波；第 2 波起，开波前弹上一波的四选一
+  if(waveTimer>0) waveTimer--;
+  if(waveTimer<=0 && spawnQueue.length===0 && zombies.length===0){
+    wave++;
+    buildWave(wave);
+    if(wave>1) offerSkills();   // 选卡期间 state=levelup，update 暂停，选完怪才进场
+  }
+  // 怪物生成（delay 里含波间喘息）
   spawnQueue.forEach(s=>s.delay--);
   spawnQueue.filter(s=>s.delay<=0).forEach(s=>spawn(s.type));
   spawnQueue = spawnQueue.filter(s=>s.delay>0);
-  if(spawnQueue.length===0 && zombies.length===0){
-    // 每波打完必弹四选一（原版节奏：过关即选技能）
-    offerSkills();
-    if(state==='levelup') return;
-    // xp 转化为金币，不设稀缺门槛
-    while(xp>=xpNeed){ xp-=xpNeed; xpNeed=Math.round(xpNeed*1.6); runCoins+=30; }
-    runDia += 2; waveTimer = 100;
-    wave++; buildWave(wave);
-  }
 
   // 弹幕风暴
   if(stats.barrage>0 && --barrageTimer<=0){
@@ -577,7 +574,17 @@ function draw(){
   const sy = PLAYER_Y + 8 - SH;
   const bob = Math.sin(frame*0.08)*1.2;
   if(soldierImg.complete && soldierImg.naturalWidth>0){
+    // 脚下阴影（融合图层）
+    ctx.save();
+    ctx.globalAlpha=0.45; ctx.fillStyle='#0a0814';
+    ctx.beginPath(); ctx.ellipse(player.x, PLAYER_Y+6, SW*0.32, 7, 0, 0, 7); ctx.fill();
+    ctx.restore();
     ctx.drawImage(soldierImg, player.x - SW/2, sy + bob, SW, SH);
+    // 轮廓描边光（让角色从背景里"跳"出来）
+    ctx.save();
+    ctx.globalAlpha=0.25; ctx.strokeStyle='#8be9fd'; ctx.lineWidth=2;
+    ctx.strokeRect(player.x-SW/2-1, sy+bob-1, SW+2, SH+2);
+    ctx.restore();
     // 枪口火光（贴立绘枪口）
     if(flashMuzzle>0){
       ctx.save();
