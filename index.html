@@ -273,7 +273,9 @@ function shoot(){
   const t = zombies.filter(z=>z.y>-z.h).sort((a,b)=>b.y-a.y)[0];
   if(!t) return;
   // 枪口尖端出膛（贴立绘枪口位置）
-  const tipX = player.x + 22, tipY = PLAYER_Y - 82;
+  const aimAng = Math.max(-0.5, Math.min(0.5, player.ang));
+  const gx = player.x + 18, gy = (PLAYER_Y+8-92) + 40;   // 枪管根
+  const tipX = gx + Math.cos(aimAng)*(44-player.recoil), tipY = gy - Math.sin(aimAng)*(44-player.recoil);
   for(let i=0;i<stats.multi;i++){
     const off = (i-(stats.multi-1)/2);
     fireBullet(tipX + Math.cos(player.ang)*off*8, tipY + Math.sin(player.ang)*off*8, t, 1, false);
@@ -546,9 +548,17 @@ function drawZombie(z){
   ctx.globalAlpha=0.35; ctx.fillStyle='#0a0814';
   ctx.beginPath(); ctx.ellipse(z.x, z.y+z.h-2, z.w*0.38, 6, 0, 0, 7); ctx.fill();
   ctx.globalAlpha=1;
-  const wob = Math.sin(frame*0.15+z.x)*2;   // 走路晃动
+  // 走路动画：左右摇摆 + 上下颠簸 + 脚步扬尘
+  const stepPhase = frame*0.18 + z.x;
+  const sway = Math.sin(stepPhase) * (z.type==='fast'? 3.5 : 2.2);   // 左右摆
+  const bounce = Math.abs(Math.sin(stepPhase)) * 2.4;                 // 上颠
+  const moving = z.y + z.h < WALL_Y + 30;
+  if(moving && frame%9===0 && z.y>10){                                // 扬尘
+    parts.push({x:z.x+(Math.random()-0.5)*z.w*0.5, y:z.y+z.h-4, vx:(Math.random()-0.5)*0.8, vy:-0.5, life:12, color:'#5a5170'});
+  }
+  ctx.translate(sway*0.4, -bounce);
   if(spr && spr.complete && spr.naturalWidth>0){
-    ctx.drawImage(spr, z.x - spr.width/2, z.y + wob*0.3, spr.width, spr.height);
+    ctx.drawImage(spr, z.x - spr.width/2, z.y, spr.width, spr.height);
     if(z.hurt>0){   // 受击白闪（用半透明白矩形叠加精灵区域）
       ctx.globalCompositeOperation='source-atop';
       ctx.fillStyle='rgba(255,255,255,0.55)';
@@ -580,7 +590,7 @@ function drawZombie(z){
 
 function draw(){
   ctx.save();
-  if(shake>0) ctx.translate((Math.random()-0.5)*shake,(Math.random()-0.5)*shake);
+  if(shake>0 && state==='play') ctx.translate((Math.random()-0.5)*shake,(Math.random()-0.5)*shake);
   ctx.drawImage(bg,0,0);
 
   // 防线（沙袋墙）
@@ -606,11 +616,23 @@ function draw(){
     ctx.beginPath(); ctx.ellipse(player.x, PLAYER_Y+6, SW*0.32, 7, 0, 0, 7); ctx.fill();
     ctx.restore();
     ctx.drawImage(soldierImg, player.x - SW/2, sy + bob, SW, SH);
+    // 实体枪管：从士兵右手斜向上伸出，子弹真正从这里出膛
+    ctx.save();
+    ctx.translate(player.x + 18, sy + 40);        // 右手位置
+    const aim = Math.max(-0.5, Math.min(0.5, player.ang));
+    ctx.rotate(aim);
+    const rec2 = player.recoil;
+    ctx.fillStyle='#101828'; ctx.beginPath(); ctx.roundRect(-4-rec2, -4, 34, 8, 3); ctx.fill();
+    const mg = ctx.createLinearGradient(0,-4,0,4);
+    mg.addColorStop(0,'#9aa8c8'); mg.addColorStop(1,'#4a5878');
+    ctx.fillStyle=mg; ctx.beginPath(); ctx.roundRect(-3-rec2, -3, 32, 6, 3); ctx.fill();
+    ctx.fillStyle='#39415c'; ctx.fillRect(26-rec2, -4.5, 6, 9);   // 枪口
+    ctx.restore();
 
     // 枪口火光（贴立绘枪口）
     if(flashMuzzle>0){
       ctx.save();
-      ctx.translate(player.x + 22, sy + 34);
+      ctx.translate(tipX - player.x, tipY - (PLAYER_Y+8));
       ctx.shadowColor='#ffd93d'; ctx.shadowBlur=12;
       ctx.fillStyle='#fff3b0'; ctx.beginPath(); ctx.arc(0,0,7,0,7); ctx.fill();
       ctx.fillStyle='#ffb347'; ctx.beginPath(); ctx.arc(0,0,4,0,7); ctx.fill();
@@ -631,9 +653,9 @@ function draw(){
     ctx.shadowColor='#ff5ce1'; ctx.shadowBlur=14;
     ctx.strokeStyle='#ff9df0'; ctx.lineWidth=2+stats.laser;
     ctx.globalAlpha=0.85;
-    ctx.beginPath(); ctx.moveTo(player.x+22,PLAYER_Y-82); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
     ctx.strokeStyle='#ffffff'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(player.x+22,PLAYER_Y-82); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
     ctx.globalAlpha=1;
     const fx=laserTarget.x, fy=laserTarget.y+laserTarget.h/2;
     ctx.fillStyle='#ffceff';
@@ -1157,6 +1179,7 @@ function drawPause(){
 
 // ================= 主循环 =================
 function loop(){
+  if(shake>0) shake-=0.5;   // 震屏衰减与状态无关：修复暂停/选卡时画面持续抖动
   // 非战斗状态下也让飘字自然消失
   if(state!=='play'){ floatTexts.forEach(f=>f.life--); floatTexts = floatTexts.filter(f=>f.life>0); }
   if(state==='play'){
