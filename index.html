@@ -58,6 +58,7 @@ let frame = 0;
 let player, wall, bullets, zombies, parts, drones, bolts, bossShots, floatTexts;
 let wave, spawnQueue, kills, runCoins, runDia, xp, level, xpNeed, stats, runSkills, shake;
 let effects, coinsFly;   // 冲击波特效 / 飞向钱包的金币
+let pendingLevels;       // 待结算的升级数（波次打完才弹三选一）
 let flashMuzzle = 0, barrageTimer = 0, chainTimer = 0;
 
 // 局外加成
@@ -85,9 +86,9 @@ function reset(){
   player = { x:W/2, targetX:W/2, cd:0, ang:0, recoil:0 };
   wall = { hp:stats.wall, max:stats.wall };
   bullets=[]; zombies=[]; parts=[]; drones=[]; bolts=[]; bossShots=[]; floatTexts=[];
-  effects=[]; coinsFly=[];
+  effects=[]; coinsFly=[]; pendingLevels=0;
   wave=0; spawnQueue=[]; kills=0; runCoins=0; runDia=0;
-  xp=0; level=1; xpNeed=8; runSkills={}; shake=0; barrageTimer=480; chainTimer=240;
+  xp=0; level=1; xpNeed=12; runSkills={}; shake=0; barrageTimer=480; chainTimer=240;
   flashMuzzle=0;
 }
 
@@ -114,9 +115,16 @@ const ICON_OF = id => (SKILL_POOL.find(s=>s.id===id)||{}).icon || '❔';
 function offerSkills(){
   const owned = Object.keys(runSkills).filter(k=>runSkills[k]>0);
   let pool = SKILL_POOL.filter(s => (runSkills[s.id]||0) < s.max);
-  // 技能槽满了：只能升级已学的，不能再学新技能
-  if(owned.length >= MAX_DISTINCT) pool = pool.filter(s => runSkills[s.id] > 0);
+  const slotFull = owned.length >= MAX_DISTINCT;
+  if(slotFull) pool = pool.filter(s => runSkills[s.id] > 0);
+  // 保底：已学技能的可升级项优先占一个坑，让"一条线持续变强"有体感
+  const upAvail = pool.filter(s => runSkills[s.id] > 0);
   const picks = [];
+  if(upAvail.length){
+    const i = Math.floor(Math.random()*upAvail.length);
+    picks.push(upAvail.splice(i,1)[0]);
+    pool = pool.filter(s => !picks.includes(s));
+  }
   while(picks.length<3 && pool.length){
     const i = Math.floor(Math.random()*pool.length);
     picks.push(pool.splice(i,1)[0]);
@@ -278,6 +286,12 @@ function update(){
   spawnQueue.filter(s=>s.delay<=0).forEach(s=>spawn(s.type));
   spawnQueue = spawnQueue.filter(s=>s.delay>0);
   if(spawnQueue.length===0 && zombies.length===0){
+    // 打完整波才结算升级（一次弹一个，弹完继续下一波）
+    if(pendingLevels>0){
+      pendingLevels--;
+      offerSkills();
+      if(state==='levelup') return;   // 弹卡期间不推进下一波
+    }
     runDia += 2; waveTimer = 100;
     wave++; buildWave(wave);
   }
@@ -398,7 +412,7 @@ function update(){
   floatTexts.forEach(f=>{f.y-=0.6;f.life--;}); floatTexts = floatTexts.filter(f=>f.life>0);
   if(shake>0) shake-=0.5;
 
-  if(xp>=xpNeed){ xp-=xpNeed; level++; xpNeed=Math.round(xpNeed*1.5); offerSkills(); }
+  while(xp>=xpNeed){ xp-=xpNeed; level++; xpNeed=Math.round(xpNeed*1.6); pendingLevels++; }
   if(wall.hp<=0){ settleRun(); state='over'; }
 }
 // 结算带出（防线失守 & 中途退出共用）
@@ -526,17 +540,21 @@ function draw(){
   ctx.fillStyle='#34527e'; ctx.beginPath(); ctx.arc(0,-43,8.5,Math.PI,0); ctx.fill();
   ctx.fillRect(-9.5,-44,19,3.5);
   ctx.fillStyle='#ffffff33'; ctx.beginPath(); ctx.arc(-3,-46,3,0,7); ctx.fill();
-  // 步枪 + 双臂（随目标旋转，带后坐）
+  // 步枪 + 双臂（随目标旋转，带后坐）：手臂用粗圆线条，标准据枪姿势
   ctx.save(); ctx.translate(0,-20); ctx.rotate(player.ang);
-  ctx.fillStyle='#f0c8a0';
-  ctx.beginPath(); ctx.arc(2,-2,3.4,0,7); ctx.fill();
-  ctx.beginPath(); ctx.arc(11,-1,3.4,0,7); ctx.fill();
+  ctx.strokeStyle='#4a6aa8'; ctx.lineCap='round'; ctx.lineWidth=6;    // 后臂（肩→握把）
+  ctx.beginPath(); ctx.moveTo(-7,7); ctx.lineTo(1,-2); ctx.stroke();
+  ctx.strokeStyle='#3d5a94';                                          // 前臂（肩→护木）
+  ctx.beginPath(); ctx.moveTo(11,7); ctx.lineTo(13,-4); ctx.stroke();
   ctx.fillStyle='#101828'; ctx.beginPath(); ctx.roundRect(-4,-24+rec,8,22,3); ctx.fill();
   const ggrad = ctx.createLinearGradient(-4,0,4,0);
   ggrad.addColorStop(0,'#7d8aa8'); ggrad.addColorStop(0.5,'#c6d2e8'); ggrad.addColorStop(1,'#5a6a8c');
   ctx.fillStyle=ggrad; ctx.beginPath(); ctx.roundRect(-3.5,-23+rec,7,20,3); ctx.fill();
   ctx.fillStyle='#39415c'; ctx.beginPath(); ctx.roundRect(-5,-26+rec,10,5,2); ctx.fill();   // 枪口
   ctx.fillStyle='#39415c'; ctx.beginPath(); ctx.roundRect(-3,-8+rec,6,9,2); ctx.fill();     // 弹匣
+  ctx.fillStyle='#f0c8a0';                                                                   // 双手
+  ctx.beginPath(); ctx.arc(1,-2,3.4,0,7); ctx.fill();
+  ctx.beginPath(); ctx.arc(13,-4,3.4,0,7); ctx.fill();
   ctx.restore();
   // 枪口火光（跟随枪口尖端）
   if(flashMuzzle>0){
@@ -643,22 +661,46 @@ function draw(){
   ctx.fillStyle='#cfcfe8'; ctx.font='bold 14px sans-serif'; ctx.textAlign='center';
   ctx.fillText('❚❚', pauseBtn.x, pauseBtn.y+5); ctx.textAlign='left';
 
-  // 右侧已学技能栏（图标 + 等级）
+  // 右侧已学技能栏（图标+等级）+ 宝石加成可视化
   const ownedSkills = Object.keys(runSkills).filter(k=>runSkills[k]>0);
-  if(ownedSkills.length){
+  const gemLines = GEM_TYPES.map(t=>({t, v:gemBonus(t.id)})).filter(g=>g.v>0.0001);
+  const GEM_SHORT = { critR:'暴击', critD:'暴伤', atk:'攻击', rate:'射速', coin:'金币', exe:'处决' };
+  const gemIcon = { critR:'🎯', critD:'💢', atk:'💥', rate:'⚡', coin:'💰', exe:'☠️' };
+  if(ownedSkills.length || gemLines.length){
     const px = W-38, py = 92;
-    ctx.fillStyle='#00000073'; ctx.beginPath(); ctx.roundRect(px-36, py-20, 46, ownedSkills.length*25+32, 9); ctx.fill();
+    const rows = ownedSkills.length + (gemLines.length? gemLines.length+1 : 0);
+    const h = rows*22 + 34;
+    ctx.fillStyle='#00000073'; ctx.beginPath(); ctx.roundRect(px-46, py-20, 58, h, 9); ctx.fill();
     ctx.strokeStyle='#4a437088'; ctx.lineWidth=1; ctx.stroke();
     ctx.fillStyle='#9996b5'; ctx.font='10px sans-serif'; ctx.textAlign='center';
-    ctx.fillText(`技能 ${ownedSkills.length}/${MAX_DISTINCT}`, px-13, py-6);
-    ownedSkills.forEach((id,i)=>{
+    ctx.fillText(`技能 ${ownedSkills.length}/${MAX_DISTINCT}`, px-17, py-6);
+    ctx.textAlign='left';
+    let ry = py+12;
+    ownedSkills.forEach(id=>{
       const s = SKILL_POOL.find(x=>x.id===id);
-      ctx.font='15px sans-serif'; ctx.fillText(s.icon, px-24, py+13+i*25);
+      ctx.font='14px sans-serif'; ctx.fillText(s.icon, px-38, ry);
       ctx.fillStyle= runSkills[id]>=s.max? '#ffd93d':'#cfcfe8';
       ctx.font='bold 11px sans-serif';
-      ctx.fillText('Lv'+runSkills[id], px+0, py+12+i*25);
+      ctx.fillText('Lv'+runSkills[id], px-14, ry-1);
+      ry += 22;
     });
-    ctx.textAlign='left';
+    if(gemLines.length){
+      ctx.fillStyle='#ff5ce1'; ctx.font='10px sans-serif';
+      ctx.fillText('◆ 宝石加成', px-38, ry+2); ry += 18;
+      gemLines.forEach(g=>{
+        ctx.font='11px sans-serif';
+        ctx.fillStyle='#e0d8ff';
+        ctx.fillText(`${gemIcon[g.t.id]}${GEM_SHORT[g.t.id]} +${Math.round(g.v*100)}%`, px-38, ry);
+        ry += 18;
+      });
+    }
+  }
+  // 待结算升级角标（波次打完弹卡）
+  if(pendingLevels>0){
+    ctx.save(); ctx.shadowColor='#ffd93d'; ctx.shadowBlur=8;
+    ctx.fillStyle='#ffd93d'; ctx.font='bold 13px sans-serif';
+    ctx.fillText(`⬆×${pendingLevels} 波次结束升级`, 318, 44);
+    ctx.restore();
   }
 
   if(spawnQueue.length===0 && zombies.length===0 && state==='play'){
@@ -691,9 +733,9 @@ function overlay(html, sig){
     b.onclick=()=>{ b.dataset.act==='menu'? backToMenu() : (reset(), state='play', ol.remove()); };
   });
   ol.querySelectorAll('.rowbtn').forEach(b=>{
-    Object.assign(b.style,{background: b.dataset.can==='1'?'#ffb347':'#4a4370',color: b.dataset.can==='1'?'#221c33':'#9996b5',
-      fontWeight:'bold',padding:'6px 14px',borderRadius:'8px',cursor: b.dataset.can==='1'?'pointer':'default',
-      fontSize:'13px',whiteSpace:'nowrap'});
+    Object.assign(b.style,{background: b.dataset.can==='1'?'#4ade80':'#4a4370',color: b.dataset.can==='1'?'#10231a':'#9996b5',
+      fontWeight:'bold',padding:'9px 16px',borderRadius:'9px',cursor: b.dataset.can==='1'?'pointer':'default',
+      fontSize:'14px',whiteSpace:'nowrap'});
     b.onclick=()=>{ if(b.dataset.can==='1') b.dataset.fn(); };
   });
   ol.querySelectorAll('.card').forEach(c=>{
@@ -772,9 +814,9 @@ function drawMenuSub(){
       const cost = upCost(u,lv);
       const can = save.coins>=cost && lv<20;
       return `<div class="row">
-        <div style="flex:1"><div class="rname">${u.name} <span style="color:#b98cff;font-size:12px">Lv.${lv}</span></div>
+        <div style="flex:1"><div class="rname">${u.name} <span style="color:#b98cff;font-size:12px">Lv.${lv}${lv>=20?'（满级）':''}</span></div>
         <div class="rdesc">${u.desc(lv)}</div></div>
-        <div class="rowbtn" data-can="${can?1:0}">💰 ${cost}</div></div>`;
+        <div class="rowbtn" data-can="${can?1:0}">${lv>=20?'✓ 满级':(can?`⚡ 升级`:`💰 ${cost}`)}</div></div>`;
     }).join('');
     const ol = overlay(`
       <div class="h1">🔧 军备研究所</div>
@@ -894,11 +936,14 @@ function drawLevelup(){
   draw();
   const owned = Object.keys(runSkills).filter(k=>runSkills[k]>0).length;
   const cards = levelupOptions.map((s,i)=>{
-    const isNew = !(runSkills[s.id]>0);
+    const lv = runSkills[s.id]||0;
+    const tag = lv>0
+      ? `<span style="color:#ffb347;font-size:11px">⬆ 强化 Lv.${lv}→${lv+1}</span>`
+      : `<span style="color:#4ade80;font-size:11px">新技能</span>`;
     return `
     <div class="card" data-i="${i}">
       <div class="icn">${s.icon}</div>
-      <div class="cn">${s.name} ${runSkills[s.id]?`<span style="color:#b98cff;font-size:12px">Lv.${runSkills[s.id]+1}</span>`:`<span style="color:#4ade80;font-size:11px">新</span>`}</div>
+      <div class="cn">${s.name} ${tag}</div>
       <div class="cd2">${s.desc}</div>
     </div>`;
   }).join('');
