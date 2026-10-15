@@ -162,24 +162,14 @@ function equipStats(){
 const eqUpCost = it => Math.round(120 * Math.pow(1.35, it.lv-1));
 
 function offerSkills(){
-  const owned = Object.keys(runSkills).filter(k=>runSkills[k]>0);
+  // 一波一选：全部可选技能随机 4 张（已学的会显示"强化 Lv.x→x+1"），无槽位限制、无保底干预
   let pool = SKILL_POOL.filter(s => (!s.locked || save.unlocked.includes(s.id)) && (runSkills[s.id]||0) < s.max);
-  const slotFull = owned.length >= MAX_DISTINCT;
-  if(slotFull) pool = pool.filter(s => runSkills[s.id] > 0);
-  // 保底：已学技能的可升级项优先占一个坑，让"一条线持续变强"有体感
-  const upAvail = pool.filter(s => runSkills[s.id] > 0);
   const picks = [];
-  if(upAvail.length){
-    const i = Math.floor(Math.random()*upAvail.length);
-    picks.push(upAvail.splice(i,1)[0]);
-    pool = pool.filter(s => !picks.includes(s));
-  }
   while(picks.length<4 && pool.length){
     const i = Math.floor(Math.random()*pool.length);
     picks.push(pool.splice(i,1)[0]);
   }
   if(picks.length===0){
-    // 全部满级：转化为金币奖励
     runCoins += 100;
     floatText(player.x, PLAYER_Y-90, '技能全满级 · +100金币', '#ffd93d');
     return;
@@ -705,7 +695,7 @@ function draw(){
     ctx.fillStyle='#00000073'; ctx.beginPath(); ctx.roundRect(px-46, py-20, 58, h, 9); ctx.fill();
     ctx.strokeStyle='#4a437088'; ctx.lineWidth=1; ctx.stroke();
     ctx.fillStyle='#9996b5'; ctx.font='10px sans-serif'; ctx.textAlign='center';
-    ctx.fillText(`技能 ${ownedSkills.length}/${MAX_DISTINCT}`, px-17, py-6);
+    ctx.fillText(`已学 ${ownedSkills.length} 项`, px-17, py-6);
     ctx.textAlign='left';
     let ry = py+12;
     ownedSkills.forEach(id=>{
@@ -1079,7 +1069,7 @@ function drawLevelup(){
   const cards = levelupOptions.map((s,i)=>{
     const lv = runSkills[s.id]||0;
     const tag = lv>0
-      ? `<span style="color:#ffb347;font-size:11px">⬆ 强化 Lv.${lv}→${lv+1}</span>`
+      ? `<span style="color:#ffb347;font-size:11px">⬆ Lv.${lv}→${lv+1}</span>`
       : `<span style="color:#4ade80;font-size:11px">新技能</span>`;
     return `
     <div class="card" data-i="${i}">
@@ -1088,9 +1078,8 @@ function drawLevelup(){
       <div class="cd2">${s.desc}</div>
     </div>`;
   }).join('');
-  const ol = overlay(`<div style="font-size:22px;font-weight:bold;color:#b98cff;margin-bottom:6px">升级！三选一</div>
-    <div style="color:#9996b5;font-size:12px;margin-bottom:14px">技能槽 ${owned}/${MAX_DISTINCT}${owned>=MAX_DISTINCT?' · 已满，只能升级已学技能':''}</div>
-    <div style="display:flex;gap:12px">${cards}</div>`,
+  const ol = overlay(`<div style="font-size:22px;font-weight:bold;color:#b98cff;margin-bottom:14px">第 ${wave} 波结束 · 四选一</div>
+    <div style="display:flex;gap:10px">${cards}</div>`,
     'lv'+level+'_'+levelupOptions.map(s=>s.id).join(','));
   if(!ol) return;
   ol.querySelectorAll('.card').forEach(c=>{
