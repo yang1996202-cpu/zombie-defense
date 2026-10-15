@@ -115,20 +115,20 @@ function reset(){
 // ================= 技能池 =================
 const MAX_DISTINCT = 4;   // 一局最多学 4 个不同技能（之后只能升级已学的）
 const SKILL_POOL = [
-  { id:'dmg',    icon:'💥', name:'火力强化', desc:'子弹伤害 +35%',              max:8 },
-  { id:'rate',   icon:'⚡', name:'极速扳机', desc:'射击速度 +25%',              max:8 },
+  { id:'dmg',    icon:'💥', name:'火力强化', desc:'子弹伤害 +35%',              max:8, rarity:1 },
+  { id:'rate',   icon:'⚡', name:'极速扳机', desc:'射击速度 +25%',              max:8, rarity:1 },
   { id:'multi',  icon:'🔱', name:'多弹道',   desc:'同时多发射一发子弹',          max:4 },
-  { id:'pierce', icon:'🏹', name:'穿甲弹头', desc:'子弹可穿透 +1 个目标',        max:4 },
-  { id:'boom',   icon:'🧨', name:'爆破弹头', desc:'命中后小范围爆炸',            max:5 },
-  { id:'ice',    icon:'❄️', name:'低温弹',   desc:'命中减速 40%，持续 2 秒',     max:3 },
-  { id:'drone',  icon:'🛸', name:'无人战机', desc:'召唤一台自动副炮',            max:4, locked:true, cost:300 },
-  { id:'crit',   icon:'🎯', name:'致命瞄准', desc:'暴击率 +12%',                max:6 },
-  { id:'wall',   icon:'🛡️', name:'防线加固', desc:'防线回 30% 并提升上限 15%',   max:5 },
-  { id:'laser',  icon:'🔆', name:'制导激光', desc:'持续照射最近敌人的高能光束',   max:5, locked:true, cost:300 },
-  { id:'burn',   icon:'🔥', name:'燃烧弹',   desc:'命中点燃，持续灼烧伤害',      max:4, locked:true, cost:250 },
-  { id:'chain',  icon:'🌩️', name:'雷电链',   desc:'闪电在敌人之间跳跃',          max:4, locked:true, cost:350 },
-  { id:'barrage',icon:'✨', name:'弹幕风暴', desc:'周期性向全屏发射弹幕',        max:3, locked:true, cost:400 },
-  { id:'exe',    icon:'☠️', name:'处决令',   desc:'击中时有概率直接秒杀小怪',    max:4, locked:true, cost:500 },
+  { id:'pierce', icon:'🏹', name:'穿甲弹头', desc:'子弹可穿透 +1 个目标',        max:4, rarity:1 },
+  { id:'boom',   icon:'🧨', name:'爆破弹头', desc:'命中后小范围爆炸',            max:5, rarity:2 },
+  { id:'ice',    icon:'❄️', name:'低温弹',   desc:'命中减速 40%，持续 2 秒',     max:3, rarity:2 },
+  { id:'drone',  icon:'🛸', name:'无人战机', desc:'召唤一台自动副炮',            max:4, rarity:2, locked:true, cost:300 },
+  { id:'crit',   icon:'🎯', name:'致命瞄准', desc:'暴击率 +12%',                max:6, rarity:1 },
+  { id:'wall',   icon:'🛡️', name:'防线加固', desc:'防线回 30% 并提升上限 15%',   max:5, rarity:1 },
+  { id:'laser',  icon:'🔆', name:'制导激光', desc:'持续照射最近敌人的高能光束',   max:5, rarity:3, locked:true, cost:300 },
+  { id:'burn',   icon:'🔥', name:'燃烧弹',   desc:'命中点燃，持续灼烧伤害',      max:4, rarity:2, locked:true, cost:250 },
+  { id:'chain',  icon:'🌩️', name:'雷电链',   desc:'闪电在敌人之间跳跃',          max:4, rarity:3, locked:true, cost:350 },
+  { id:'barrage',icon:'✨', name:'弹幕风暴', desc:'周期性向全屏发射弹幕',        max:3, rarity:3, locked:true, cost:400 },
+  { id:'exe',    icon:'☠️', name:'处决令',   desc:'击中时有概率直接秒杀小怪',    max:4, rarity:3, locked:true, cost:500 },
 ];
 const ICON_OF = id => (SKILL_POOL.find(s=>s.id===id)||{}).icon || '❔';
 
@@ -234,9 +234,14 @@ const ZTYPES = {
 };
 function spawn(type){
   const b = ZTYPES[type];
-  zombies.push({ type, x: 50+Math.random()*(W-100), y: -b.h, hurt:0,
-    hp:b.hp+wave*b.hpw, max:b.hp+wave*b.hpw, spd:b.spd+wave*b.spw,
-    w:b.w, h:b.h, dmg:b.dmg, coin:b.coin, dia:b.dia, xpv:b.xp, slow:0, atkCd:0, burn:0, shotCd:240 });
+  let elite = false;
+  if(type!=='boss' && wave>=5 && Math.random()<0.08) elite = true;   // 精英：8% 概率
+  const scale = elite? 1.3 : 1;
+  const hp = Math.round((b.hp+wave*b.hpw) * (elite? 3.2 : 1));
+  zombies.push({ type, elite, x: 50+Math.random()*(W-100), y: -b.h*scale, hurt:0,
+    hp, max:hp, spd:(b.spd+wave*b.spw)*(elite?0.85:1),
+    w:b.w*scale, h:b.h*scale, dmg:Math.round(b.dmg*(elite?1.6:1)),
+    coin:b.coin*(elite?4:1), dia:b.dia, xpv:b.xp*(elite?4:1), slow:0, atkCd:0, burn:0, shotCd:240 });
 }
 
 // ================= 输入 =================
@@ -276,7 +281,7 @@ function fireBullet(x,y,t,dmgMul,isDrone){
     hitSet:new Set(), drone:!!isDrone, target:t, spd:isDrone?13:16 });
 }
 function shoot(){
-  const t = zombies.filter(z=>z.y>-z.h).sort((a,b)=>b.y-a.y)[0];
+  const t = zombies.filter(z=>z.y>4).sort((a,b)=>b.y-a.y)[0];
   if(!t) return;
   const tip = muzzleTip();
   for(let i=0;i<stats.multi;i++){
@@ -303,7 +308,7 @@ function boomArea(x,y,r,dmg){
 function ring(x,y,maxR,color,lw=3,life=18){
   effects.push({x,y,r:6,maxR,life,maxLife:life,color,lw});
 }
-function floatText(x,y,txt,color){ floatTexts.push({x,y,txt,color,life:40}); }
+function floatText(x,y,txt,color,size){ floatTexts.push({x,y,txt,color,life:40,size:size||14}); if(floatTexts.length>36) floatTexts.shift(); }
 
 // ================= 主循环（单步） =================
 function update(){
@@ -328,7 +333,7 @@ function update(){
     d.x += ((player.x + Math.sin(frame*0.05+i*2)*70) - d.x)*0.1;
     d.y = PLAYER_Y - 60 + Math.cos(frame*0.06+i)*10;
     if(--d.cd<=0){
-      const t = zombies.filter(z=>z.y>-z.h).sort((a,b)=>b.y-a.y)[0];
+      const t = zombies.filter(z=>z.y>4).sort((a,b)=>b.y-a.y)[0];
       if(t){ fireBullet(d.x,d.y,t,0.5,true); d.cd=45; }
     }
   });
@@ -358,7 +363,7 @@ function update(){
   // 雷电链
   if(stats.chain>0 && --chainTimer<=0){
     chainTimer = 300 - stats.chain*25;
-    const alive = zombies.filter(z=>z.hp>0 && z.y>-z.h);
+    const alive = zombies.filter(z=>z.hp>0 && z.y>4);
     if(alive.length){
       let cur = alive[Math.floor(Math.random()*alive.length)];
       const chainSet = [cur]; const pts=[{x:cur.x,y:cur.y+cur.h/2}];
@@ -386,6 +391,7 @@ function update(){
       if(b.x>z.x-z.w/2-4 && b.x<z.x+z.w/2+4 && b.y>z.y && b.y<z.y+z.h){
         b.hitSet.add(z);
         z.hp-=b.dmg; z.hurt=8;
+        if(floatTexts.length<34) floatText(z.x+(Math.random()-0.5)*14, z.y+6, Math.round(b.dmg), b.crit?'#ffd93d':'#ffffff', b.crit?19:12);
         burst(b.x,b.y, b.crit?'#ffd93d':'#ff6b6b', b.crit?6:3);
         if(b.crit) ring(b.x,b.y,16,'#ffd93d',2,10);
         if(stats.exe && z.type!=='boss' && Math.random() < 0.02*stats.exe + stats.exeGem){
@@ -402,7 +408,7 @@ function update(){
 
   // 制导激光
   if(stats.laser>0){
-    const t = zombies.filter(z=>z.hp>0 && z.y>-z.h).sort((a,b)=>b.y-a.y)[0];
+    const t = zombies.filter(z=>z.hp>0 && z.y>4).sort((a,b)=>b.y-a.y)[0];
     laserTarget = t || null;
     if(t){ t.hp -= 0.3*stats.laser; t.hurt = 4; }
   } else laserTarget = null;
@@ -465,7 +471,7 @@ function update(){
       for(let i=0;i<nCoins;i++)
         coinsFly.push({x:z.x,y:z.y+z.h/2, vx:(Math.random()-0.5)*7, vy:-Math.random()*5-2});
       // 装备掉落（Boss 必掉）
-      const dropCh = z.type==='boss'?1:(z.type==='tank'?0.09:(z.type==='fast'?0.05:0.04));
+      const dropCh = z.elite?1:(z.type==='boss'?1:(z.type==='tank'?0.09:(z.type==='fast'?0.05:0.04)));
       if(Math.random()<dropCh && bagDrops<6){
         const it = rollEquip(z.type==='boss');
         if(save.bag.length>=12){ runCoins += 20*(it.q+1); floatText(z.x,z.y,'背包满→金币','#ffd93d'); }
@@ -579,10 +585,18 @@ function drawZombie(z){
     ctx.strokeStyle='#7fd6ff'; ctx.lineWidth=2;
     ctx.strokeRect(z.x-z.w/2-2, z.y-2, z.w+4, z.h+4);
   }
-  if(z.hp < z.max){
+  {
     const bw = z.w;
     ctx.fillStyle='#00000088'; ctx.fillRect(z.x-bw/2,-12+ (z.y>0?0:0),bw,5);
     ctx.fillStyle='#ff5252'; ctx.fillRect(z.x-bw/2,-12,bw*(z.hp/z.max),5);
+  }
+  // 精英怪紫环 + 标记
+  if(z.elite){
+    ctx.save(); ctx.strokeStyle='#c07cff'; ctx.lineWidth=2.5; ctx.globalAlpha=0.9;
+    ctx.beginPath(); ctx.ellipse(z.x, z.y+z.h-3, z.w*0.46, 8, 0, 0, 7); ctx.stroke();
+    ctx.fillStyle='#c07cff'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('精英', z.x, z.y-22); ctx.textAlign='left';
+    ctx.restore();
   }
   // 自爆胖子低血量闪烁警示
   if(z.type==='bomber' && z.hp < z.max*0.4 && frame%14<7){
@@ -714,7 +728,7 @@ function draw(){
   parts.forEach(p=>{ ctx.globalAlpha=Math.min(1,p.life/35); ctx.fillStyle=p.color;
     ctx.fillRect(p.x-2,p.y-2,4,4); ctx.globalAlpha=1; });
   floatTexts.forEach(f=>{ ctx.globalAlpha=Math.min(1,f.life/40); ctx.fillStyle=f.color;
-    ctx.font='bold 15px sans-serif'; ctx.textAlign='center'; ctx.fillText(f.txt,f.x,f.y); ctx.textAlign='left'; ctx.globalAlpha=1; });
+    ctx.font='bold '+f.size+'px sans-serif'; ctx.textAlign='center'; ctx.fillText(f.txt,f.x,f.y); ctx.textAlign='left'; ctx.globalAlpha=1; });
 
   ctx.restore(); // shake 结束
 
@@ -738,6 +752,14 @@ function draw(){
   ctx.strokeStyle='#8886a8'; ctx.lineWidth=2; ctx.stroke();
   ctx.fillStyle='#cfcfe8'; ctx.font='bold 14px sans-serif'; ctx.textAlign='center';
   ctx.fillText('❚❚', pauseBtn.x, pauseBtn.y+5); ctx.textAlign='left';
+
+  // 左上角战力面板（攻击/射速/暴击/弹道 实时数值）
+  ctx.fillStyle='#00000066'; ctx.beginPath(); ctx.roundRect(14, 44, 190, 66, 8); ctx.fill();
+  ctx.fillStyle='#cfcfe8'; ctx.font='11px sans-serif';
+  ctx.fillText(`⚔ 攻击 ${Math.round(stats.dmg)}`, 24, 62);
+  ctx.fillText(`⏱ 射速 ${stats.rate.toFixed(1)}/s`, 110, 62);
+  ctx.fillText(`🎯 暴击 ${Math.round(stats.crit*100)}%  💢${Math.round(stats.critD*10)/10}x`, 24, 80);
+  ctx.fillText(`🔱 弹道 ${stats.multi}  🏸 穿透 ${stats.pierce}`, 24, 98);
 
   // 右侧已学技能栏（图标+等级）+ 宝石加成可视化
   const ownedSkills = Object.keys(runSkills).filter(k=>runSkills[k]>0);
@@ -1127,9 +1149,12 @@ function drawLevelup(){
     const tag = lv>0
       ? `<span style="color:#ffb347;font-size:11px">⬆ Lv.${lv}→${lv+1}</span>`
       : `<span style="color:#4ade80;font-size:11px">新技能</span>`;
+    const rName = ['','普通','稀有','史诗'][s.rarity||1];
+    const rColor = ['','#cfcfe8','#57b2ff','#ffb347'][s.rarity||1];
     return `
-    <div class="card" data-i="${i}">
+    <div class="card" data-i="${i}" style="border-color:${rColor}">
       <div class="icn">${s.icon}</div>
+      <div class="rty" style="color:${rColor};font-size:10px;margin-bottom:2px">◆ ${rName}</div>
       <div class="cn">${s.name} ${tag}</div>
       <div class="cd2">${s.desc}</div>
     </div>`;
