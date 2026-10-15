@@ -263,6 +263,12 @@ cv.addEventListener('pointermove', e=>{
 });
 
 // ================= 射击 =================
+// 枪管口全局坐标（shoot 出弹 / draw 火光与激光共用，避免局部变量跨作用域引用崩溃）
+function muzzleTip(){
+  const aimAng = Math.max(-0.5, Math.min(0.5, player.ang));
+  const gx = player.x + 18, gy = (PLAYER_Y+8-92) + 40;   // 枪管根
+  return { x: gx + Math.cos(aimAng)*(44-player.recoil), y: gy - Math.sin(aimAng)*(44-player.recoil) };
+}
 function fireBullet(x,y,t,dmgMul,isDrone){
   const crit = Math.random()<stats.crit;
   bullets.push({ x,y, vx:0, vy:isDrone?-13:-16,
@@ -272,13 +278,10 @@ function fireBullet(x,y,t,dmgMul,isDrone){
 function shoot(){
   const t = zombies.filter(z=>z.y>-z.h).sort((a,b)=>b.y-a.y)[0];
   if(!t) return;
-  // 枪口尖端出膛（贴立绘枪口位置）
-  const aimAng = Math.max(-0.5, Math.min(0.5, player.ang));
-  const gx = player.x + 18, gy = (PLAYER_Y+8-92) + 40;   // 枪管根
-  const tipX = gx + Math.cos(aimAng)*(44-player.recoil), tipY = gy - Math.sin(aimAng)*(44-player.recoil);
+  const tip = muzzleTip();
   for(let i=0;i<stats.multi;i++){
     const off = (i-(stats.multi-1)/2);
-    fireBullet(tipX + Math.cos(player.ang)*off*8, tipY + Math.sin(player.ang)*off*8, t, 1, false);
+    fireBullet(tip.x + Math.cos(player.ang)*off*8, tip.y + Math.sin(player.ang)*off*8, t, 1, false);
   }
   flashMuzzle = 4;
   player.recoil = 7;
@@ -629,10 +632,11 @@ function draw(){
     ctx.fillStyle='#39415c'; ctx.fillRect(26-rec2, -4.5, 6, 9);   // 枪口
     ctx.restore();
 
-    // 枪口火光（贴立绘枪口）
+    // 枪口火光（贴枪管口）
     if(flashMuzzle>0){
+      const tip = muzzleTip();
       ctx.save();
-      ctx.translate(tipX - player.x, tipY - (PLAYER_Y+8));
+      ctx.translate(tip.x, tip.y);
       ctx.shadowColor='#ffd93d'; ctx.shadowBlur=12;
       ctx.fillStyle='#fff3b0'; ctx.beginPath(); ctx.arc(0,0,7,0,7); ctx.fill();
       ctx.fillStyle='#ffb347'; ctx.beginPath(); ctx.arc(0,0,4,0,7); ctx.fill();
@@ -653,9 +657,10 @@ function draw(){
     ctx.shadowColor='#ff5ce1'; ctx.shadowBlur=14;
     ctx.strokeStyle='#ff9df0'; ctx.lineWidth=2+stats.laser;
     ctx.globalAlpha=0.85;
-    ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
+    const tipL = muzzleTip();
+    ctx.beginPath(); ctx.moveTo(tipL.x,tipL.y); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
     ctx.strokeStyle='#ffffff'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tipL.x,tipL.y); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
     ctx.globalAlpha=1;
     const fx=laserTarget.x, fy=laserTarget.y+laserTarget.h/2;
     ctx.fillStyle='#ffceff';
