@@ -24,6 +24,10 @@ const W = cv.width, H = cv.height;
 const WALL_Y = H - 110, PLAYER_Y = H - 70;
 // 像素士兵立绘（生成素材）
 const soldierImg = new Image(); soldierImg.src = 'soldier.png';
+const ZSPRITES = {};
+for(const [k,f] of Object.entries({normal:'z_normal.png',fast:'z_fast.png',tank:'z_tank.png',bomber:'z_bomber.png',nurse:'z_nurse.png',boss:'z_boss.png'})){
+  const im = new Image(); im.src = f; ZSPRITES[k] = im;
+}
 
 // ================= 存档（局外累积） =================
 const SAVE_KEY = 'zf_save_v1';
@@ -206,23 +210,27 @@ function buildWave(n){
   waveBanner = { text: n%5===0? `⚠ 第 ${n} 波 · BOSS 来袭` : `第 ${n} 波`, boss: n%5===0, life:80, max:80 };
   spawnQueue = [];
   const boss = n % 5 === 0;
-  let count = 6 + Math.floor(n*1.8);
+  let count = 10 + Math.floor(n*2.2);          // 小兵更多，场面热闹
   if(boss) count = Math.floor(count*0.6);
   for(let i=0;i<count;i++){
     let type = 'normal';
     const r = Math.random();
-    if(n>=3 && r<0.22) type='fast';
-    else if(n>=4 && r<0.34) type='tank';
-    spawnQueue.push({ type, delay: 70 + i*(boss?34:22) });   // 开头留 >1 秒喘息
+    if(n>=2 && r<0.25) type='fast';
+    else if(n>=4 && r<0.40) type='tank';
+    else if(n>=6 && r<0.50) type='bomber';     // 自爆胖子
+    else if(n>=8 && r<0.58) type='nurse';      // 奶妈僵尸
+    spawnQueue.push({ type, delay: 70 + i*(boss?34:16) });   // 出怪更密
   }
-  if(boss) spawnQueue.push({ type:'boss', delay: count*22 + 40 });
+  if(boss) spawnQueue.push({ type:'boss', delay: 70 + count*16 + 40 });
 }
 
 const ZTYPES = {
-  normal:{ hp:18,  hpw:6,   spd:0.35, spw:0.012, w:36, h:44, dmg:8,  coin:2,  dia:0, xp:2 },
-  fast:  { hp:10,  hpw:4,   spd:0.85, spw:0.018,  w:30, h:36, dmg:5,  coin:3,  dia:0, xp:3 },
-  tank:  { hp:60,  hpw:14,  spd:0.22, spw:0.008, w:48, h:56, dmg:16, coin:6,  dia:0, xp:5 },
-  boss:  { hp:400, hpw:80,  spd:0.16, spw:0,     w:84, h:92, dmg:30, coin:50, dia:20, xp:30 },
+  normal:{ hp:24,  hpw:7,   spd:0.35, spw:0.012, w:44, h:64, dmg:8,  coin:2,  dia:0, xp:2 },
+  fast:  { hp:14,  hpw:5,   spd:0.85, spw:0.018, w:34, h:56, dmg:5,  coin:3,  dia:0, xp:3 },
+  tank:  { hp:90,  hpw:18,  spd:0.22, spw:0.008, w:58, h:74, dmg:16, coin:6,  dia:0, xp:5 },
+  bomber:{ hp:30,  hpw:9,   spd:0.5,  spw:0.012, w:46, h:72, dmg:0,  coin:5,  dia:0, xp:4 },
+  nurse: { hp:40,  hpw:11,  spd:0.3,  spw:0.010, w:42, h:64, dmg:4,  coin:6,  dia:0, xp:4 },
+  boss:  { hp:500, hpw:95,  spd:0.16, spw:0,     w:98, h:110,dmg:30, coin:50, dia:20, xp:30 },
 };
 function spawn(type){
   const b = ZTYPES[type];
@@ -265,7 +273,7 @@ function shoot(){
   const t = zombies.filter(z=>z.y>-z.h).sort((a,b)=>b.y-a.y)[0];
   if(!t) return;
   // 枪口尖端出膛（贴立绘枪口位置）
-  const tipX = player.x - 14, tipY = PLAYER_Y - 74;
+  const tipX = player.x + 22, tipY = PLAYER_Y - 82;
   for(let i=0;i<stats.multi;i++){
     const off = (i-(stats.multi-1)/2);
     fireBullet(tipX + Math.cos(player.ang)*off*8, tipY + Math.sin(player.ang)*off*8, t, 1, false);
@@ -401,9 +409,34 @@ function update(){
     if(z.slow>0) z.slow--;
     if(z.hurt>0) z.hurt--;
     if(z.burn>0){ z.burn--; z.hp -= 0.08*stats.burn; if(frame%6===0) parts.push({x:z.x+(Math.random()-0.5)*z.w,y:z.y+z.h*0.5,vx:0,vy:-1.5,life:14,color:'#ff7b3a'}); }
+    // 奶妈僵尸：每 2 秒治疗周围同伴
+    if(z.type==='nurse'){
+      if(frame % 120 === 0){
+        let healed=false;
+        zombies.forEach(o=>{
+          if(o!==z && !o.deadTag && Math.hypot(o.x-z.x,o.y-z.y)<130 && o.hp<o.max){
+            o.hp = Math.min(o.max, o.hp + o.max*0.08);
+            healed=true;
+            floatText(o.x, o.y, '+', '#7dff9e');
+          }
+        });
+        if(healed) ring(z.x, z.y+z.h/2, 130, '#7dff9e', 2, 16);
+      }
+    }
+    // 自爆胖子：贴近防线自爆（大伤害+震动），被远距打死则安全
+    if(z.type==='bomber'){
+      if(z.y + z.h >= WALL_Y + 26){
+        wall.hp -= 26; shake=16;
+        boomArea(z.x, WALL_Y+20, 90, 0);
+        burst(z.x, WALL_Y, '#ff5252', 22);
+        floatText(z.x, WALL_Y-40, '💥 自爆 -26', '#ff5252');
+        z.hp = 0; z.deadTag = true;
+        return;
+      }
+    }
     if(z.y + z.h < WALL_Y + 30){ z.y += spd; }
     else {
-      if(--z.atkCd<=0){ wall.hp -= z.dmg; z.atkCd=50; burst(z.x, WALL_Y, '#ff5252', 5); shake=Math.max(shake,4); }
+      if(z.dmg>0 && --z.atkCd<=0){ wall.hp -= z.dmg; z.atkCd=50; burst(z.x, WALL_Y, '#ff5252', 5); shake=Math.max(shake,4); }
     }
     // Boss 远程攻击
     if(z.type==='boss' && z.y>60 && --z.shotCd<=0){
@@ -507,49 +540,42 @@ const bg = document.createElement('canvas'); bg.width=W; bg.height=H;
 })();
 
 function drawZombie(z){
-  ctx.save(); ctx.translate(z.x, z.y);
-  const t = frame*0.15 + z.x;
-  const step = Math.sin(t)*4;           // 走路摆动
-  const lean = z.type==='fast'? -0.12 : 0;
-  ctx.rotate(lean);
-  const C = { normal:{body:'#5d9448',dark:'#436f33',head:'#7ab35e'},
-              fast:  {body:'#b09a3e',dark:'#8a772c',head:'#d0b955'},
-              tank:  {body:'#6d4b96',dark:'#523677',head:'#8a63b8'},
-              boss:  {body:'#a83a3a',dark:'#7d2727',head:'#c74f4f'} }[z.type];
-  // 腿
-  ctx.fillStyle=C.dark;
-  ctx.fillRect(-z.w*0.28 + step*0.4, z.h*0.78, z.w*0.2, z.h*0.24);
-  ctx.fillRect( z.w*0.08 - step*0.4, z.h*0.78, z.w*0.2, z.h*0.24);
-  // 身体
-  ctx.fillStyle = z.hurt>0? '#fff' : C.body;
-  ctx.beginPath(); ctx.roundRect(-z.w*0.38, z.h*0.34, z.w*0.76, z.h*0.48, 7); ctx.fill();
-  // 前伸手臂
-  ctx.fillStyle = z.hurt>0? '#fff' : C.dark;
-  ctx.save(); ctx.translate(-z.w*0.34, z.h*0.42); ctx.rotate(Math.sin(t)*0.2);
-  ctx.fillRect(-z.w*0.42, 0, z.w*0.5, 7); ctx.restore();
-  ctx.save(); ctx.translate(z.w*0.34, z.h*0.42); ctx.rotate(-Math.sin(t)*0.2);
-  ctx.fillRect(-z.w*0.08, 0, z.w*0.5, 7); ctx.restore();
-  // 头
-  ctx.fillStyle = z.hurt>0? '#fff' : C.head;
-  ctx.beginPath(); ctx.arc(step*0.2, z.h*0.2, z.w*0.3, 0, 7); ctx.fill();
-  // 红眼
-  ctx.fillStyle='#ff3b3b';
-  ctx.fillRect(-z.w*0.16+step*0.2, z.h*0.13, 5, 5);
-  ctx.fillRect( z.w*0.05+step*0.2, z.h*0.13, 5, 5);
-  // Boss 犄角
-  if(z.type==='boss'){
-    ctx.fillStyle='#e8c14a';
-    ctx.beginPath(); ctx.moveTo(-z.w*0.3,-z.h*0.02); ctx.lineTo(-z.w*0.42,-z.h*0.22); ctx.lineTo(-z.w*0.16,-z.h*0.08); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(z.w*0.3,-z.h*0.02); ctx.lineTo(z.w*0.42,-z.h*0.22); ctx.lineTo(z.w*0.16,-z.h*0.08); ctx.fill();
+  const spr = ZSPRITES[z.type];
+  ctx.save();
+  // 脚下阴影
+  ctx.globalAlpha=0.35; ctx.fillStyle='#0a0814';
+  ctx.beginPath(); ctx.ellipse(z.x, z.y+z.h-2, z.w*0.38, 6, 0, 0, 7); ctx.fill();
+  ctx.globalAlpha=1;
+  const wob = Math.sin(frame*0.15+z.x)*2;   // 走路晃动
+  if(spr && spr.complete && spr.naturalWidth>0){
+    ctx.drawImage(spr, z.x - spr.width/2, z.y + wob*0.3, spr.width, spr.height);
+    if(z.hurt>0){   // 受击白闪（用半透明白矩形叠加精灵区域）
+      ctx.globalCompositeOperation='source-atop';
+      ctx.fillStyle='rgba(255,255,255,0.55)';
+      ctx.fillRect(z.x-spr.width/2, z.y, spr.width, spr.height);
+      ctx.globalCompositeOperation='source-over';
+    }
+  } else {
+    // 兜底：无图时画色块
+    ctx.fillStyle = '#7fae5b';
+    ctx.beginPath(); ctx.roundRect(z.x-z.w/2, z.y, z.w, z.h, 6); ctx.fill();
   }
-  // 灼烧
-  if(z.burn>0){ ctx.fillStyle='rgba(255,120,40,0.25)'; ctx.beginPath(); ctx.arc(0,z.h/2,z.w*0.55,0,7); ctx.fill(); }
-  // 冰冻
-  if(z.slow>0){ ctx.strokeStyle='#7fd6ff'; ctx.lineWidth=2; ctx.strokeRect(-z.w/2-2,-2,z.w+4,z.h+4); }
-  // 血条
-  ctx.fillStyle='#00000088'; ctx.fillRect(-z.w/2,-12,z.w,5);
-  ctx.fillStyle='#ff5252'; ctx.fillRect(-z.w/2,-12,z.w*(z.hp/z.max),5);
   ctx.restore();
+  // 冰冻框 / 血条（画在精灵上层）
+  if(z.slow>0){
+    ctx.strokeStyle='#7fd6ff'; ctx.lineWidth=2;
+    ctx.strokeRect(z.x-z.w/2-2, z.y-2, z.w+4, z.h+4);
+  }
+  if(z.hp < z.max){
+    const bw = z.w;
+    ctx.fillStyle='#00000088'; ctx.fillRect(z.x-bw/2,-12+ (z.y>0?0:0),bw,5);
+    ctx.fillStyle='#ff5252'; ctx.fillRect(z.x-bw/2,-12,bw*(z.hp/z.max),5);
+  }
+  // 自爆胖子低血量闪烁警示
+  if(z.type==='bomber' && z.hp < z.max*0.4 && frame%14<7){
+    ctx.strokeStyle='#ff5252'; ctx.lineWidth=3;
+    ctx.strokeRect(z.x-z.w/2-4, z.y-4, z.w+8, z.h+8);
+  }
 }
 
 function draw(){
@@ -580,15 +606,11 @@ function draw(){
     ctx.beginPath(); ctx.ellipse(player.x, PLAYER_Y+6, SW*0.32, 7, 0, 0, 7); ctx.fill();
     ctx.restore();
     ctx.drawImage(soldierImg, player.x - SW/2, sy + bob, SW, SH);
-    // 轮廓描边光（让角色从背景里"跳"出来）
-    ctx.save();
-    ctx.globalAlpha=0.25; ctx.strokeStyle='#8be9fd'; ctx.lineWidth=2;
-    ctx.strokeRect(player.x-SW/2-1, sy+bob-1, SW+2, SH+2);
-    ctx.restore();
+
     // 枪口火光（贴立绘枪口）
     if(flashMuzzle>0){
       ctx.save();
-      ctx.translate(player.x - SW*0.15, sy + 10);
+      ctx.translate(player.x + 22, sy + 34);
       ctx.shadowColor='#ffd93d'; ctx.shadowBlur=12;
       ctx.fillStyle='#fff3b0'; ctx.beginPath(); ctx.arc(0,0,7,0,7); ctx.fill();
       ctx.fillStyle='#ffb347'; ctx.beginPath(); ctx.arc(0,0,4,0,7); ctx.fill();
@@ -609,9 +631,9 @@ function draw(){
     ctx.shadowColor='#ff5ce1'; ctx.shadowBlur=14;
     ctx.strokeStyle='#ff9df0'; ctx.lineWidth=2+stats.laser;
     ctx.globalAlpha=0.85;
-    ctx.beginPath(); ctx.moveTo(player.x,PLAYER_Y-72); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(player.x+22,PLAYER_Y-82); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
     ctx.strokeStyle='#ffffff'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(player.x,PLAYER_Y-72); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(player.x+22,PLAYER_Y-82); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
     ctx.globalAlpha=1;
     const fx=laserTarget.x, fy=laserTarget.y+laserTarget.h/2;
     ctx.fillStyle='#ffceff';
