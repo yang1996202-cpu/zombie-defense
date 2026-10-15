@@ -22,6 +22,8 @@
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 const W = cv.width, H = cv.height;
 const WALL_Y = H - 110, PLAYER_Y = H - 70;
+// 像素士兵立绘（生成素材）
+const soldierImg = new Image(); soldierImg.src = 'soldier.png';
 
 // ================= 存档（局外累积） =================
 const SAVE_KEY = 'zf_save_v1';
@@ -221,16 +223,16 @@ function buildWave(n){
     const r = Math.random();
     if(n>=3 && r<0.22) type='fast';
     else if(n>=4 && r<0.34) type='tank';
-    spawnQueue.push({ type, delay: i*(boss?34:22) });
+    spawnQueue.push({ type, delay: 50 + i*(boss?34:22) });   // 开头留 1 秒喘息
   }
   if(boss) spawnQueue.push({ type:'boss', delay: count*22 + 40 });
 }
 
 const ZTYPES = {
-  normal:{ hp:18,  hpw:4.5, spd:0.35, spw:0.010, w:36, h:44, dmg:8,  coin:2,  dia:0, xp:2 },
-  fast:  { hp:10,  hpw:3,   spd:0.85, spw:0.016,  w:30, h:36, dmg:5,  coin:3,  dia:0, xp:3 },
-  tank:  { hp:60,  hpw:12,  spd:0.22, spw:0.006, w:48, h:56, dmg:16, coin:6,  dia:0, xp:5 },
-  boss:  { hp:400, hpw:70,  spd:0.16, spw:0,     w:84, h:92, dmg:30, coin:50, dia:20, xp:30 },
+  normal:{ hp:18,  hpw:6,   spd:0.35, spw:0.012, w:36, h:44, dmg:8,  coin:2,  dia:0, xp:2 },
+  fast:  { hp:10,  hpw:4,   spd:0.85, spw:0.018,  w:30, h:36, dmg:5,  coin:3,  dia:0, xp:3 },
+  tank:  { hp:60,  hpw:14,  spd:0.22, spw:0.008, w:48, h:56, dmg:16, coin:6,  dia:0, xp:5 },
+  boss:  { hp:400, hpw:80,  spd:0.16, spw:0,     w:84, h:92, dmg:30, coin:50, dia:20, xp:30 },
 };
 function spawn(type){
   const b = ZTYPES[type];
@@ -272,9 +274,8 @@ function fireBullet(x,y,t,dmgMul,isDrone){
 function shoot(){
   const t = zombies.filter(z=>z.y>-z.h).sort((a,b)=>b.y-a.y)[0];
   if(!t) return;
-  // 枪口尖端出膛（跟随枪口角度 + 后坐）
-  const tipX = player.x + Math.sin(player.ang)*(30-player.recoil);
-  const tipY = (PLAYER_Y-22) - Math.cos(player.ang)*(30-player.recoil);
+  // 枪口尖端出膛（贴立绘枪口位置）
+  const tipX = player.x - 14, tipY = PLAYER_Y - 74;
   for(let i=0;i<stats.multi;i++){
     const off = (i-(stats.multi-1)/2);
     fireBullet(tipX + Math.cos(player.ang)*off*8, tipY + Math.sin(player.ang)*off*8, t, 1, false);
@@ -581,60 +582,22 @@ function draw(){
   ctx.fillStyle='#cfcfe8'; ctx.font='11px sans-serif';
   ctx.fillText(`防线 ${Math.max(0,Math.ceil(wall.hp))}/${Math.ceil(wall.max)}`, 22, WALL_Y+52);
 
-  // 哨兵（人形建模 v3：据枪瞄准姿态）
-  ctx.save(); ctx.translate(player.x, PLAYER_Y);
-  const rec = player.recoil;
-  const bob = Math.sin(frame*0.08)*0.8;
-  ctx.translate(0, bob);
-  // 双腿 + 护膝 + 靴
-  ctx.fillStyle='#2e3a55';
-  ctx.beginPath(); ctx.roundRect(-12,-14,9,15,3); ctx.fill();
-  ctx.beginPath(); ctx.roundRect(3,-14,9,15,3); ctx.fill();
-  ctx.fillStyle='#46598a'; ctx.fillRect(-12,-8,9,4); ctx.fillRect(3,-8,9,4);
-  ctx.fillStyle='#1a2338'; ctx.fillRect(-14,-2,12,4); ctx.fillRect(1,-2,12,4);
-  // 躯干护甲 + 腰带 + 背包带
-  const tg2 = ctx.createLinearGradient(0,-36,0,-10);
-  tg2.addColorStop(0,'#6fa8e8'); tg2.addColorStop(1,'#2c4a7c');
-  ctx.fillStyle=tg2; ctx.beginPath(); ctx.roundRect(-13,-36,26,24,8); ctx.fill();
-  ctx.fillStyle='#ffffff22'; ctx.beginPath(); ctx.roundRect(-10,-34,20,6,3); ctx.fill();
-  ctx.fillStyle='#24365c'; ctx.fillRect(-13,-24,26,4);
-  ctx.strokeStyle='#24365c'; ctx.lineWidth=3;
-  ctx.beginPath(); ctx.moveTo(-8,-35); ctx.lineTo(-3,-14); ctx.stroke();
-  // 胸前能量灯（脉冲）
-  ctx.save(); ctx.shadowColor='#8be9fd'; ctx.shadowBlur=8;
-  ctx.fillStyle='#bff4ff'; ctx.beginPath(); ctx.arc(4,-28,2.6+Math.sin(frame*0.15)*0.8,0,7); ctx.fill();
-  ctx.restore();
-  // 头 + 战术头盔（带风镜）
-  ctx.fillStyle='#f0c8a0'; ctx.beginPath(); ctx.arc(0,-45,7.5,0,7); ctx.fill();
-  ctx.fillStyle='#34527e'; ctx.beginPath(); ctx.arc(0,-46,8.5,Math.PI,0); ctx.fill();
-  ctx.fillRect(-9.5,-47,19,4);
-  ctx.fillStyle='#8be9fd55'; ctx.beginPath(); ctx.roundRect(-8,-46.5,16,4,2); ctx.fill();
-  ctx.fillStyle='#ffffff33'; ctx.beginPath(); ctx.arc(-3,-49,3,0,7); ctx.fill();
-  // 步枪 + 双臂（肩部旋转据枪，带后坐）
-  ctx.save(); ctx.translate(0,-22); ctx.rotate(player.ang);
-  ctx.strokeStyle='#4a6aa8'; ctx.lineCap='round'; ctx.lineWidth=5.5;
-  ctx.beginPath(); ctx.moveTo(-8,9); ctx.lineTo(0,-2); ctx.stroke();      // 扳机手
-  ctx.beginPath(); ctx.moveTo(12,9); ctx.lineTo(13,-8); ctx.stroke();     // 护木手
-  ctx.fillStyle='#101828'; ctx.beginPath(); ctx.roundRect(-4.5,-30+rec,9,28,3.5); ctx.fill();
-  const ggrad = ctx.createLinearGradient(-4.5,0,4.5,0);
-  ggrad.addColorStop(0,'#8d9ab8'); ggrad.addColorStop(0.5,'#c6d2e8'); ggrad.addColorStop(1,'#4a5878');
-  ctx.fillStyle=ggrad; ctx.beginPath(); ctx.roundRect(-4,-29+rec,8,26,3.5); ctx.fill();
-  ctx.fillStyle='#39415c'; ctx.beginPath(); ctx.roundRect(-6,-33+rec,12,6,2); ctx.fill();  // 枪口
-  ctx.fillStyle='#39415c'; ctx.beginPath(); ctx.roundRect(-3,-6+rec,6,10,2); ctx.fill();   // 弹匣
-  ctx.fillStyle='#f0c8a0';
-  ctx.beginPath(); ctx.arc(0,-2,3.2,0,7); ctx.fill();
-  ctx.beginPath(); ctx.arc(13,-8,3.2,0,7); ctx.fill();
-  ctx.restore();
-  // 枪口火光（跟随枪口尖端）
-  if(flashMuzzle>0){
-    ctx.save();
-    ctx.translate(Math.sin(player.ang)*(30-rec), -22-Math.cos(player.ang)*(30-rec));
-    ctx.shadowColor='#ffd93d'; ctx.shadowBlur=12;
-    ctx.fillStyle='#fff3b0'; ctx.beginPath(); ctx.arc(0,0,6.5,0,7); ctx.fill();
-    ctx.fillStyle='#ffb347'; ctx.beginPath(); ctx.arc(0,0,3.6,0,7); ctx.fill();
-    ctx.restore();
+  // 哨兵（像素士兵立绘，背视角持枪）
+  const SW = 92, SH = 92;
+  const sy = PLAYER_Y + 8 - SH;
+  const bob = Math.sin(frame*0.08)*1.2;
+  if(soldierImg.complete && soldierImg.naturalWidth>0){
+    ctx.drawImage(soldierImg, player.x - SW/2, sy + bob, SW, SH);
+    // 枪口火光（贴立绘枪口）
+    if(flashMuzzle>0){
+      ctx.save();
+      ctx.translate(player.x - SW*0.15, sy + 10);
+      ctx.shadowColor='#ffd93d'; ctx.shadowBlur=12;
+      ctx.fillStyle='#fff3b0'; ctx.beginPath(); ctx.arc(0,0,7,0,7); ctx.fill();
+      ctx.fillStyle='#ffb347'; ctx.beginPath(); ctx.arc(0,0,4,0,7); ctx.fill();
+      ctx.restore();
+    }
   }
-  ctx.restore();
 
   // 无人机
   drones.forEach(d=>{
@@ -649,9 +612,9 @@ function draw(){
     ctx.shadowColor='#ff5ce1'; ctx.shadowBlur=14;
     ctx.strokeStyle='#ff9df0'; ctx.lineWidth=2+stats.laser;
     ctx.globalAlpha=0.85;
-    ctx.beginPath(); ctx.moveTo(player.x,PLAYER_Y-24); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(player.x,PLAYER_Y-72); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
     ctx.strokeStyle='#ffffff'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(player.x,PLAYER_Y-24); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(player.x,PLAYER_Y-72); ctx.lineTo(laserTarget.x,laserTarget.y+laserTarget.h/2); ctx.stroke();
     ctx.globalAlpha=1;
     const fx=laserTarget.x, fy=laserTarget.y+laserTarget.h/2;
     ctx.fillStyle='#ffceff';
@@ -853,12 +816,12 @@ function drawMenu(){
     <div class="h1">🧟 僵尸防线 · 至尊版</div>
     <div class="sub">金币 <span class="gold">${save.coins}</span> ｜ 钻石 <span class="dia">${save.dia}</span> ｜ 宝石 <span style="color:#ff5ce1">${save.gems.length}</span> 颗${vip?` ｜ <span style="color:#ffd93d">VIP${vip}</span>`:''}</div>
     <div class="btn" style="background:#4ade80">开始游戏</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:6px">
-      <div class="btn" data-act="menu" style="background:#4a4370;color:#fff;font-size:14px;padding:9px 18px;position:relative" id="btnUp">🔧 军备研究所${canUp?'<span style="position:absolute;top:-6px;right:-6px;background:#ff5252;color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:18px">!</span>':''}</div>
-      <div class="btn" data-act="menu" style="background:#4a4370;color:#fff;font-size:14px;padding:9px 18px;position:relative" id="btnBag">🎒 装备仓库${save.bag.length?`<span style="position:absolute;top:-6px;right:-6px;background:#ff5252;color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:18px">${save.bag.length}</span>`:''}</div>
-      <div class="btn" data-act="menu" style="background:#4a4370;color:#fff;font-size:14px;padding:9px 18px" id="btnChest">🎁 至尊宝箱</div>
-      <div class="btn" data-act="menu" style="background:#4a4370;color:#fff;font-size:14px;padding:9px 18px;position:relative" id="btnLab">🔓 技能实验室${canUnlock?'<span style="position:absolute;top:-6px;right:-6px;background:#8be9fd;color:#123;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:18px">!</span>':''}</div>
-      <div class="btn" data-act="menu" style="background:#c0392b;color:#fff;font-size:14px;padding:9px 18px" id="btnPay">💎 充值中心</div>
+    <div style="width:100%;max-width:380px;margin-top:8px">
+      <div class="mbtn" id="btnUp"><span class="mi">🔧</span><span class="mtx"><b>军备研究所</b><i>金币买永久属性，越买越强</i></span>${canUp?'<span class="dot">!</span>':''}</div>
+      <div class="mbtn" id="btnBag"><span class="mi">🎒</span><span class="mtx"><b>装备仓库</b><i>穿装备 · 金币强化 · 出售</i></span>${save.bag.length?`<span class="dot red">${save.bag.length}</span>`:''}</div>
+      <div class="mbtn" id="btnChest"><span class="mi">🎁</span><span class="mtx"><b>至尊宝箱</b><i>钻石抽宝石，全局加成</i></span></div>
+      <div class="mbtn" id="btnLab"><span class="mi">🔓</span><span class="mtx"><b>技能实验室</b><i>钻石永久解锁高级技能</i></span>${canUnlock?'<span class="dot blue">!</span>':''}</div>
+      <div class="mbtn" id="btnPay" style="border-color:#c0392b"><span class="mi">💎</span><span class="mtx"><b>充值中心</b><i>模拟支付 · 0 元爽玩</i></span></div>
     </div>
     ${!save.paid._seen? `<div style="margin-top:14px;background:linear-gradient(90deg,#c0392b,#e67e22);border-radius:10px;padding:8px 16px;color:#fff;font-size:12px;cursor:pointer" id="fc">🔥 首充 ¥6 送 888 钻 + 专属称号 →</div>`:''}
     <div class="note" style="text-align:center">
@@ -867,7 +830,22 @@ function drawMenu(){
       击杀 Boss 必掉钻石 · 每波通关 +2 钻 · 存档自动保存
     </div>`, sig2);
   if(!ol) return;
-  const bu=ol.querySelector('#btnUp'); if(bu) bu.dataset.act='menu', bu.onclick=()=>{ subView='up'; menuDirty=true; clearOL(); state='menuSub'; };
+  // 菜单列表按钮样式
+  ol.querySelectorAll('.mbtn').forEach(b=>{
+    Object.assign(b.style,{display:'flex',alignItems:'center',gap:'12px',padding:'12px 14px',
+      background:'#2a2444',border:'1px solid #4a4370',borderRadius:'12px',margin:'4px 0',
+      width:'100%',cursor:'pointer',textAlign:'left',position:'relative',boxSizing:'border-box'});
+    b.onmouseenter=()=>b.style.borderColor='#ffb347';
+    b.onmouseleave=()=>b.style.borderColor = b.id==='btnPay'? '#c0392b':'#4a4370';
+  });
+  ol.querySelectorAll('.mi').forEach(e=>Object.assign(e.style,{fontSize:'22px',width:'30px',textAlign:'center'}));
+  ol.querySelectorAll('.mtx').forEach(e=>Object.assign(e.style,{flex:1,display:'flex',flexDirection:'column'}));
+  ol.querySelectorAll('.mtx b').forEach(e=>Object.assign(e.style,{color:'#fff',fontSize:'15px'}));
+  ol.querySelectorAll('.mtx i').forEach(e=>Object.assign(e.style,{color:'#9996b5',fontSize:'11px',fontStyle:'normal',marginTop:'2px'}));
+  ol.querySelectorAll('.dot').forEach(e=>Object.assign(e.style,{background: e.classList.contains('red')?'#ff5252':(e.classList.contains('blue')?'#8be9fd':'#ff5252'),
+    color: e.classList.contains('blue')?'#123':'#fff',borderRadius:'50%',minWidth:'18px',height:'18px',fontSize:'11px',
+    lineHeight:'18px',textAlign:'center',fontWeight:'bold'}));
+  const bu=ol.querySelector('#btnUp'); if(bu) bu.onclick=()=>{ subView='up'; menuDirty=true; clearOL(); state='menuSub'; };
   const bb=ol.querySelector('#btnBag'); if(bb) bb.onclick=()=>{ subView='equip'; menuDirty=true; clearOL(); state='menuSub'; };
   const bc=ol.querySelector('#btnChest'); if(bc) bc.onclick=()=>{ subView='chest'; chestView='shop'; menuDirty=true; clearOL(); state='menuSub'; };
   const bl=ol.querySelector('#btnLab'); if(bl) bl.onclick=()=>{ subView='skills'; menuDirty=true; clearOL(); state='menuSub'; };
